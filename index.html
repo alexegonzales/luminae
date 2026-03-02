@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Luminae</title>
+  <meta name="theme-color" content="#c084fc"/>
+  <link rel="manifest" href="manifest.json"/>
+  <link rel="stylesheet" href="style.css"/>
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700&family=Inter:wght@300;400;500&display=swap" rel="stylesheet"/>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"/>
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet"/>
+</head>
+<body class="light">
+
+  <!-- TOP NAV -->
+  <header class="navbar">
+    <div class="nav-logo">✨ Luminae</div>
+    <button class="theme-toggle" id="themeToggle" title="Toggle dark mode">
+      <i class="fas fa-moon"></i>
+    </button>
+  </header>
+
+  <!-- BOTTOM NAV -->
+  <nav class="bottom-nav">
+    <button class="nav-btn active" data-page="library">
+      <i class="fas fa-book-open"></i>
+      <span>Library</span>
+    </button>
+    <button class="nav-btn" data-page="search">
+      <i class="fas fa-search"></i>
+      <span>Discover</span>
+    </button>
+    <button class="nav-btn" data-page="reading">
+      <i class="fas fa-bookmark"></i>
+      <span>Reading</span>
+    </button>
+  </nav>
+
+  <!-- PAGES -->
+  <main class="app-main">
+
+    <!-- LIBRARY PAGE -->
+    <section class="page active" id="page-library">
+      <div class="page-header">
+        <h1>My Library</h1>
+        <button class="btn-add" id="openAddBook">
+          <i class="fas fa-plus"></i> Add Book
+        </button>
+      </div>
+      <div class="book-grid" id="bookGrid">
+        <!-- Books will appear here -->
+      </div>
+      <div class="empty-state" id="emptyState">
+        <i class="fas fa-book-open"></i>
+        <p>Your library is empty</p>
+        <span>Add a book to get started!</span>
+      </div>
+    </section>
+
+    <!-- DISCOVER PAGE -->
+    <section class="page" id="page-search">
+      <div class="page-header">
+        <h1>Discover Books</h1>
+      </div>
+      <div class="search-bar">
+        <i class="fas fa-search"></i>
+        <input type="text" id="searchInput" placeholder="Search free books..."/>
+        <button id="searchBtn">Search</button>
+      </div>
+      <div class="book-grid" id="searchResults"></div>
+      <div class="empty-state" id="searchEmpty">
+        <i class="fas fa-compass"></i>
+        <p>Search for any book</p>
+        <span>Thousands of free classics available!</span>
+      </div>
+    </section>
+
+    <!-- CURRENTLY READING PAGE -->
+    <section class="page" id="page-reading">
+      <div class="page-header">
+        <h1>Currently Reading</h1>
+      </div>
+      <div class="book-grid" id="readingGrid"></div>
+      <div class="empty-state" id="readingEmpty">
+        <i class="fas fa-bookmark"></i>
+        <p>No books in progress</p>
+        <span>Mark a book as reading to track it here!</span>
+      </div>
+    </section>
+
+  </main>
+
+ <!-- ADD BOOK MODAL -->
+<div class="modal-overlay" id="addBookModal">
+  <div class="modal">
+    <div class="modal-header">
+      <h2>Add a Book</h2>
+      <button class="modal-close" id="closeAddBook">
+        <i class="fas fa-times"></i>
+      </button>
+    </div>
+    <div class="modal-body">
+      <div class="upload-area" id="uploadArea">
+        <i class="fas fa-cloud-upload-alt"></i>
+        <p>Tap to upload a PDF or ePub</p>
+        <span class="upload-hint">Supports .pdf and .epub files</span>
+        <input type="file" id="fileUpload" accept=".pdf,.epub" hidden/>
+      </div>
+      <input type="text" id="uploadTitle"  placeholder="Book Title *" />
+      <input type="text" id="uploadAuthor" placeholder="Author" />
+      <button class="btn-primary" id="savePdfBook">
+        Save to Library
+      </button>
+    </div>
+  </div>
+</div>
+
+  <!-- BOOK DETAIL MODAL -->
+  <div class="modal-overlay" id="bookDetailModal">
+    <div class="modal">
+      <div class="modal-header">
+        <h2 id="detailTitle">Book Title</h2>
+        <button class="modal-close" id="closeDetail"><i class="fas fa-times"></i></button>
+      </div>
+      <div class="modal-body">
+        <img id="detailCover" src="" alt="cover" class="detail-cover"/>
+        <p id="detailAuthor" class="detail-author"></p>
+        <p id="detailNotes" class="detail-notes"></p>
+        <div class="detail-actions">
+          <button class="btn-primary" id="readBookBtn"><i class="fas fa-book-reader"></i> Read</button>
+          <button class="btn-secondary" id="toggleReadingBtn"><i class="fas fa-bookmark"></i> Currently Reading</button>
+          <button class="btn-danger" id="deleteBookBtn"><i class="fas fa-trash"></i> Delete</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- PDF READER -->
+  <div class="reader-overlay" id="pdfReader">
+    <div class="reader-header">
+      <button id="closeReader"><i class="fas fa-arrow-left"></i></button>
+      <span id="readerTitle">Reading...</span>
+      <button id="readerThemeToggle"><i class="fas fa-adjust"></i></button>
+    </div>
+    <iframe id="pdfFrame" src="" frameborder="0"></iframe>
+  </div>
+
+  <script src="jszip.min.js"></script>
+  <script src="epub.min.js"></script>
+  <script src="app.js"></script>
+  <!-- <script src="app.js"></script> -->
+</body>
+</html>
