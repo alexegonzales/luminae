@@ -422,7 +422,7 @@ function setupUpload() {
 
         currentFileUrl      = URL.createObjectURL(file);
         currentFileType     = ext;
-        window._pendingFile = file; // store actual File object
+        window._pendingFile = file;
 
         const cleanName = file.name
           .replace(/\.(pdf|epub)$/i, '')
@@ -468,7 +468,7 @@ function setupUpload() {
         notes:   '',
         reading: false,
         type:    currentFileType,
-        fileUrl: null, // stored in IndexedDB, not here
+        fileUrl: null,
         pdfUrl:  null,
         addedAt: Date.now()
       };
@@ -476,10 +476,8 @@ function setupUpload() {
       showToast('💾 Saving book...');
 
       try {
-        // Save actual file to IndexedDB permanently
         await saveFileToDB(bookId, window._pendingFile);
 
-        // Extract cover using blob URL
         if (currentFileType === 'epub') {
           book.cover = await extractCoverFromEpub(currentFileUrl);
         } else if (currentFileType === 'pdf') {
@@ -525,7 +523,6 @@ function setupModal() {
     document.getElementById('bookDetailModal').classList.remove('open');
 
     try {
-      // Load file from IndexedDB and create fresh blob URL
       const file = await getFileFromDB(book.id);
 
       if (file) {
@@ -567,10 +564,7 @@ function setupModal() {
 
   document.getElementById('deleteBookBtn').addEventListener('click', async () => {
     if (!currentBookId) return;
-
-    // Delete file from IndexedDB
     try { await deleteFileFromDB(currentBookId); } catch(e) {}
-
     books = books.filter(b => b.id !== currentBookId);
     saveBooks();
     renderLibrary();
@@ -744,10 +738,35 @@ function openEpubReader(book) {
         font-weight:600;color:#7a5c3e;
         text-transform:uppercase;letter-spacing:1px;
       ">Loading...</span>
-      <div style="width:100%;max-width:140px;height:5px;background:#c4a882;
-        border-radius:3px;border:1.5px solid #a07850;overflow:hidden;">
-        <div id="epubProgressBar" style="width:0%;height:100%;background:#9723C9;
-          border-radius:2px;transition:width 0.4s ease;"></div>
+      <div style="width:100%;max-width:220px;position:relative;">
+        <input id="epubSeekBar" type="range" min="0" max="100" value="0" step="0.1" style="
+          width:100%;height:18px;cursor:pointer;accent-color:#9723C9;
+          -webkit-appearance:none;appearance:none;background:transparent;
+          padding:0;margin:0;
+        "/>
+        <style>
+          #epubSeekBar::-webkit-slider-runnable-track {
+            height:6px;border-radius:3px;
+            background:linear-gradient(to right,#9723C9 var(--seek-pct,0%),#c4a882 var(--seek-pct,0%));
+            border:1.5px solid #a07850;
+          }
+          #epubSeekBar::-moz-range-track {
+            height:6px;border-radius:3px;background:#c4a882;border:1.5px solid #a07850;
+          }
+          #epubSeekBar::-moz-range-progress { background:#9723C9;height:6px;border-radius:3px; }
+          #epubSeekBar::-webkit-slider-thumb {
+            -webkit-appearance:none;appearance:none;
+            width:16px;height:16px;border-radius:50%;
+            background:#9723C9;border:2px solid #fff;
+            box-shadow:0 0 0 2px #9723C9;margin-top:-6px;cursor:grab;
+          }
+          #epubSeekBar:active::-webkit-slider-thumb { cursor:grabbing; }
+          #epubSeekBar::-moz-range-thumb {
+            width:16px;height:16px;border-radius:50%;
+            background:#9723C9;border:2px solid #fff;
+            box-shadow:0 0 0 2px #9723C9;cursor:grab;
+          }
+        </style>
       </div>
       <span id="epubPercent" style="
         font-family:'Space Grotesk',sans-serif;font-size:0.68rem;
@@ -774,7 +793,7 @@ function openEpubReader(book) {
           padding:0 8px;height:28px;font-size:0.6rem;font-weight:700;
           cursor:pointer;box-shadow:2px 2px 0 #a07850;color:#2c1a0e;
           font-family:'Space Grotesk',sans-serif;text-transform:uppercase;
-          transition:transform 0.1s,box-shadow 0.1s;">Reset</button>
+          transition:transform 0.1s,box-shadow 0.1s;display:flex;align-items:center;justify-content:center;line-height:1;">Reset</button>
       </div>
     </div>
 
@@ -798,29 +817,56 @@ function openEpubReader(book) {
   fetch(book.fileUrl)
     .then(res => res.arrayBuffer())
     .then(buffer => {
-      epubContainer.innerHTML =
-        '<div id="epubViewer" style="width:100%;height:100%;flex:1;"></div>';
 
       epubBook = ePub(buffer, { openAs: 'binary' });
 
-      const getSize = () => {
-        const viewer   = document.getElementById('epubViewer');
-        const controls = document.getElementById('epubControls');
-        const header   = document.querySelector('#pdfReader .reader-header');
-        const totalH   = window.innerHeight
-          - (header   ? header.offsetHeight   : 58)
-          - (controls ? controls.offsetHeight : 60);
-        return {
-          w: viewer ? viewer.clientWidth || window.innerWidth : window.innerWidth,
-          h: totalH > 0 ? totalH : window.innerHeight - 120
-        };
-      };
+      // Wait for DOM to fully paint before measuring
+      requestAnimationFrame(() => {
+        setTimeout(() => {
 
-      const { w, h } = getSize();
+          const header   = document.querySelector('#pdfReader .reader-header');
+          const controls = document.getElementById('epubControls');
+          const headerH  = header   ? header.offsetHeight   : 58;
+          const ctrlH    = controls ? controls.offsetHeight : 60;
 
-      epubRendition = epubBook.renderTo('epubViewer', {
-        width: w, height: h, spread: 'none', flow: 'paginated'
-      });
+          // Measure directly from window — never read from viewer div
+          const fullW    = window.innerWidth;
+          const fullH    = window.innerHeight - headerH - ctrlH;
+
+          // 680px confirmed safe width that stops column splitting on iPad
+          const epubW      = Math.min(fullW, 680);
+          const epubH      = Math.max(fullH, 300);
+          const leftOffset = Math.floor((fullW - epubW) / 2);
+
+          // Create viewer at EXACT pixel size BEFORE renderTo is called
+          epubContainer.innerHTML = '';
+          const viewerDiv         = document.createElement('div');
+          viewerDiv.id            = 'epubViewer';
+          viewerDiv.style.cssText =
+            `width:${epubW}px;height:${epubH}px;` +
+            `position:absolute;top:0;left:${leftOffset}px;overflow:hidden;`;
+          epubContainer.appendChild(viewerDiv);
+
+          const getSize = () => {
+            const hEl    = document.querySelector('#pdfReader .reader-header');
+            const cEl    = document.getElementById('epubControls');
+            const hH     = hEl ? hEl.offsetHeight : 58;
+            const cH     = cEl ? cEl.offsetHeight : 60;
+            const fw     = window.innerWidth;
+            const fh     = window.innerHeight - hH - cH;
+            const w      = Math.min(fw, 680);
+            const h      = Math.max(fh, 300);
+            const left   = Math.floor((fw - w) / 2);
+            return { w, h, left };
+          };
+
+          epubRendition = epubBook.renderTo('epubViewer', {
+            width:  epubW,
+            height: epubH,
+            spread: 'none',
+            flow:   'paginated',
+            allowScriptedContent: false
+          });
 
       // ── Zoom helpers ───────────────────────────────────────
       function injectZoomIntoIframe() {
@@ -851,8 +897,6 @@ function openEpubReader(book) {
           try { epubRendition.themes.fontSize(`${currentFontSize}%`); } catch(e) {}
         }
         injectZoomIntoIframe();
-
-        // Persist zoom into saved progress
         const prog = JSON.parse(
           localStorage.getItem('luminae-progress') || '{}'
         );
@@ -880,7 +924,6 @@ function openEpubReader(book) {
             .then(() => {
               applyZoom(currentFontSize);
               updateProgressBar(savedProgress.percent);
-              // Off-by-one correction
               const loc = epubRendition.currentLocation();
               if (loc && loc.start) {
                 const currentPage = loc.start.displayed.page;
@@ -933,6 +976,33 @@ function openEpubReader(book) {
         () => { if (epubRendition) epubRendition.prev(); };
       document.getElementById('epubNext').onclick =
         () => { if (epubRendition) epubRendition.next(); };
+
+      // ── Seek bar (draggable progress) ──────────────────────
+      const seekBar = document.getElementById('epubSeekBar');
+      let isSeeking = false;
+
+      seekBar.addEventListener('mousedown',  () => { isSeeking = true; });
+      seekBar.addEventListener('touchstart', () => { isSeeking = true; }, { passive: true });
+
+      seekBar.addEventListener('input', () => {
+        const pct = parseFloat(seekBar.value);
+        seekBar.style.setProperty('--seek-pct', `${pct}%`);
+        const label = document.getElementById('epubPercent');
+        if (label) label.textContent = `${Math.round(pct)}%`;
+      });
+
+      const doSeek = () => {
+        if (!isSeeking) return;
+        isSeeking = false;
+        if (!epubBook || !epubBook.locations || !epubBook.locations.length()) return;
+        const pct = parseFloat(seekBar.value) / 100;
+        const cfi = epubBook.locations.cfiFromPercentage(pct);
+        if (cfi) epubRendition.display(cfi);
+      };
+
+      seekBar.addEventListener('mouseup',  doSeek);
+      seekBar.addEventListener('touchend', doSeek, { passive: true });
+      seekBar.addEventListener('change',   doSeek);
 
       // ── Zoom buttons ───────────────────────────────────────
       document.getElementById('zoomOut').onclick   =
@@ -1032,14 +1102,27 @@ function openEpubReader(book) {
       if (window._epubResizeObserver) {
         window._epubResizeObserver.disconnect();
       }
+      let resizeTimer = null;
       window._epubResizeObserver = new ResizeObserver(() => {
         if (!epubRendition) return;
-        const { w: newW, h: newH } = getSize();
-        epubRendition.resize(newW, newH);
+        clearTimeout(resizeTimer);
+        resizeTimer = setTimeout(() => {
+          const { w: nW, h: nH, left: nLeft } = getSize();
+          const el = document.getElementById('epubViewer');
+          if (el) {
+            el.style.width  = `${nW}px`;
+            el.style.height = `${nH}px`;
+            el.style.left   = `${nLeft}px`;
+          }
+          epubRendition.resize(nW, nH);
+        }, 150);
       });
       window._epubResizeObserver.observe(
         document.getElementById('pdfReader')
       );
+
+        }, 150); // end setTimeout
+      });       // end requestAnimationFrame
     })
     .catch(err => {
       console.error('ePub load error:', err);
@@ -1050,11 +1133,14 @@ function openEpubReader(book) {
 }
 
 function updateProgressBar(percent) {
-  const bar     = document.getElementById('epubProgressBar');
+  const seek    = document.getElementById('epubSeekBar');
   const label   = document.getElementById('epubPercent');
-  const rounded = Math.round(percent);
-  if (bar)   bar.style.width   = `${rounded}%`;
-  if (label) label.textContent = `${rounded}%`;
+  const rounded = Math.round(percent * 10) / 10;
+  if (seek) {
+    seek.value = rounded;
+    seek.style.setProperty('--seek-pct', `${rounded}%`);
+  }
+  if (label) label.textContent = `${Math.round(rounded)}%`;
 }
 
 // ========================
@@ -1163,15 +1249,10 @@ function applyEpubTheme() {
 
     setTimeout(() => {
       if (!epubRendition) return;
-      const viewer   = document.getElementById('epubViewer');
-      const controls = document.getElementById('epubControls');
-      const header   = document.querySelector('#pdfReader .reader-header');
-      const totalH   = window.innerHeight
-        - (header   ? header.offsetHeight   : 58)
-        - (controls ? controls.offsetHeight : 60);
-      const w = viewer
-        ? viewer.clientWidth || window.innerWidth : window.innerWidth;
-      const h = totalH > 0 ? totalH : window.innerHeight - 120;
+      const viewer  = document.getElementById('epubViewer');
+      const reader  = document.getElementById('pdfReader');
+      const w = viewer ? viewer.clientWidth  || reader.clientWidth  || window.innerWidth  : window.innerWidth;
+      const h = viewer ? viewer.clientHeight || reader.clientHeight || window.innerHeight : window.innerHeight;
       epubRendition.resize(w, h);
     }, 50);
 
