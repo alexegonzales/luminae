@@ -5,13 +5,13 @@
 const CACHE_NAME = 'luminae-v1';
 
 const ASSETS = [
-  '/',
-  '/index.html',
-  '/style.css',
-  '/app.js',
-  '/manifest.json',
-  '/epub.min.js',
-  '/jszip.min.js',
+  '/luminae/',
+  '/luminae/index.html',
+  '/luminae/style.css',
+  '/luminae/app.js',
+  '/luminae/manifest.json',
+  '/luminae/epub.min.js',
+  '/luminae/jszip.min.js',
   'https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Archivo+Black&display=swap',
   'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css'
 ];
@@ -45,9 +45,8 @@ self.addEventListener('fetch', (e) => {
   e.respondWith(
     caches.match(e.request).then(cached => {
       return cached || fetch(e.request).catch(() => {
-        // If offline and page not cached, show fallback
         if (e.request.mode === 'navigate') {
-          return caches.match('/index.html');
+          return caches.match('/luminae/index.html');
         }
       });
     })
