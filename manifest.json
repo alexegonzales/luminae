@@ -2,8 +2,7 @@
   "name": "Luminae",
   "short_name": "Luminae",
   "description": "Your personal book library and reader",
-  "start_url": "/luminae/",
-  "scope": "/luminae/",
+  "start_url": "/",
   "display": "standalone",
   "background_color": "#FCDFFF",
   "theme_color": "#C4A1FF",
@@ -22,5 +21,4 @@
       "purpose": "any maskable"
     }
   ]
-
 }
