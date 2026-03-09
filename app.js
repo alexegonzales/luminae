@@ -181,6 +181,7 @@ function setupThemeToggle() {
     localStorage.setItem('luminae-dark', darkMode);
     updateThemeIcon(btn);
     applyEpubTheme();
+    applyPdfTheme();
   });
 
   const readerBtn = document.getElementById('readerThemeToggle');
@@ -191,6 +192,7 @@ function setupThemeToggle() {
       localStorage.setItem('luminae-dark', darkMode);
       updateThemeIcon(btn);
       applyEpubTheme();
+      applyPdfTheme();
     });
   }
 }
@@ -645,19 +647,484 @@ function setupReader() {
   document.getElementById('closeReader').addEventListener('click', closeReader);
 }
 
-function openPdfReader(book) {
+async function openPdfReader(book) {
   const url = book.fileUrl || book.pdfUrl;
-  document.getElementById('readerTitle').textContent  = book.title;
-  document.getElementById('pdfFrame').src             = url;
-  document.getElementById('pdfFrame').style.display   = 'block';
+  if (!url) { showToast('⚠️ No file found. Please re-upload the book.'); return; }
 
-  const epubContainer = document.getElementById('epubContainer');
-  if (epubContainer) epubContainer.style.display = 'none';
-  const epubControls = document.getElementById('epubControls');
-  if (epubControls) epubControls.style.display = 'none';
+  document.getElementById('readerTitle').textContent = book.title;
+
+  // ── Hide iframe, show epub-style container ─────────────────
+  const pdfFrame = document.getElementById('pdfFrame');
+  pdfFrame.src = ''; pdfFrame.style.display = 'none';
+
+  // Reuse the exact same epubContainer and epubControls the epub reader uses
+  // This means the PDF reader IS the epub reader visually — same DOM, same CSS
+  let epubContainer = document.getElementById('epubContainer');
+  if (!epubContainer) {
+    epubContainer    = document.createElement('div');
+    epubContainer.id = 'epubContainer';
+    document.getElementById('pdfReader').insertBefore(
+      epubContainer,
+      document.getElementById('pdfReader').lastElementChild
+    );
+  }
+  epubContainer.style.display = '';
+  epubContainer.style.cssText = `
+    flex:1;width:100%;overflow:hidden;
+    background:${darkMode ? '#1c1008' : '#f4ede4'};
+    display:flex;flex-direction:column;position:relative;min-height:0;
+  `;
+  epubContainer.innerHTML = `
+    <div style="display:flex;align-items:center;justify-content:center;
+      height:100%;color:${darkMode ? '#b08060' : '#7a5c3e'};
+      flex-direction:column;gap:12px;flex:1;">
+      <i class="fas fa-spinner fa-spin" style="font-size:2rem;color:#9723C9;"></i>
+      <span style="font-family:'Space Grotesk',sans-serif;font-weight:600;">
+        Loading book...
+      </span>
+    </div>`;
+
+  // ── Controls bar — identical to epub controls ──────────────
+  let epubControls = document.getElementById('epubControls');
+  if (!epubControls) {
+    epubControls    = document.createElement('div');
+    epubControls.id = 'epubControls';
+    document.getElementById('pdfReader').appendChild(epubControls);
+  }
+  epubControls.style.display = '';
+  epubControls.style.cssText = `
+    display:flex;align-items:center;justify-content:space-between;
+    padding:10px 16px;background:${darkMode ? '#140e08' : '#ede4d8'};
+    border-top:3px solid ${darkMode ? '#4a3728' : '#c4a882'};gap:12px;flex-shrink:0;
+  `;
+  epubControls.innerHTML = `
+    <button id="pdfPrev" style="
+      background:${darkMode?'#3d2a1a':'#d4b896'};
+      border:3px solid ${darkMode?'#6b4a2e':'#a07850'};border-radius:10px;
+      padding:10px 16px;font-family:'Space Grotesk',sans-serif;
+      font-weight:700;font-size:0.85rem;text-transform:uppercase;
+      cursor:pointer;box-shadow:${darkMode?'3px 3px 0 #6b4a2e':'3px 3px 0 #a07850'};
+      color:${darkMode?'#f0e0c8':'#2c1a0e'};
+      transition:transform 0.1s,box-shadow 0.1s;flex-shrink:0;">← Prev</button>
+
+    <div style="display:flex;flex-direction:column;align-items:center;gap:4px;flex:1;">
+      <span id="pdfPageLabel" style="
+        font-family:'Space Grotesk',sans-serif;font-size:0.75rem;font-weight:600;
+        color:${darkMode?'#b08060':'#7a5c3e'};text-transform:uppercase;letter-spacing:1px;">
+        Page 1 of ?</span>
+
+      <div style="width:100%;max-width:220px;position:relative;">
+        <input id="pdfSeekBar" type="range" min="1" max="100" value="1" step="1" style="
+          width:100%;height:18px;cursor:pointer;accent-color:#9723C9;
+          -webkit-appearance:none;appearance:none;background:transparent;padding:0;margin:0;"/>
+        <style>
+          #pdfSeekBar::-webkit-slider-runnable-track{height:6px;border-radius:3px;
+            background:linear-gradient(to right,#9723C9 var(--pdf-pct,0%),
+              ${darkMode?'#4a3728':'#c4a882'} var(--pdf-pct,0%));
+            border:1.5px solid ${darkMode?'#6b4a2e':'#a07850'};}
+          #pdfSeekBar::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;
+            width:16px;height:16px;border-radius:50%;background:#9723C9;cursor:grab;
+            border:2px solid ${darkMode?'#1c1008':'#fff'};
+            box-shadow:0 0 0 2px #9723C9;margin-top:-6px;}
+          #pdfSeekBar:active::-webkit-slider-thumb{cursor:grabbing;}
+          #pdfSeekBar::-moz-range-track{height:6px;border-radius:3px;
+            background:${darkMode?'#4a3728':'#c4a882'};
+            border:1.5px solid ${darkMode?'#6b4a2e':'#a07850'};}
+          #pdfSeekBar::-moz-range-progress{background:#9723C9;height:6px;border-radius:3px;}
+          #pdfSeekBar::-moz-range-thumb{width:16px;height:16px;border-radius:50%;
+            background:#9723C9;cursor:grab;
+            border:2px solid ${darkMode?'#1c1008':'#fff'};box-shadow:0 0 0 2px #9723C9;}
+        </style>
+      </div>
+
+      <span id="pdfPercent" style="
+        font-family:'Space Grotesk',sans-serif;font-size:0.68rem;
+        font-weight:700;color:${darkMode?'#d4a87a':'#9723C9'};letter-spacing:0.5px;">0%</span>
+
+      <div style="display:flex;align-items:center;gap:6px;margin-top:2px;">
+        <button id="pdfZoomOut" style="
+          background:${darkMode?'#3d2a1a':'#d4b896'};
+          border:2px solid ${darkMode?'#6b4a2e':'#a07850'};border-radius:6px;
+          width:28px;height:28px;font-size:1rem;font-weight:700;cursor:pointer;
+          box-shadow:${darkMode?'2px 2px 0 #6b4a2e':'2px 2px 0 #a07850'};
+          color:${darkMode?'#f0e0c8':'#2c1a0e'};
+          display:flex;align-items:center;justify-content:center;
+          transition:transform 0.1s,box-shadow 0.1s;">−</button>
+        <span id="pdfZoomLabel" style="
+          font-family:'Space Grotesk',sans-serif;font-size:0.68rem;
+          font-weight:700;color:${darkMode?'#b08060':'#7a5c3e'};
+          min-width:36px;text-align:center;">100%</span>
+        <button id="pdfZoomIn" style="
+          background:${darkMode?'#3d2a1a':'#d4b896'};
+          border:2px solid ${darkMode?'#6b4a2e':'#a07850'};border-radius:6px;
+          width:28px;height:28px;font-size:1rem;font-weight:700;cursor:pointer;
+          box-shadow:${darkMode?'2px 2px 0 #6b4a2e':'2px 2px 0 #a07850'};
+          color:${darkMode?'#f0e0c8':'#2c1a0e'};
+          display:flex;align-items:center;justify-content:center;
+          transition:transform 0.1s,box-shadow 0.1s;">+</button>
+        <button id="pdfZoomReset" style="
+          background:${darkMode?'#2a1a0a':'#c4a882'};
+          border:2px solid ${darkMode?'#6b4a2e':'#a07850'};border-radius:6px;
+          padding:0 8px;height:28px;font-size:0.6rem;font-weight:700;cursor:pointer;
+          box-shadow:${darkMode?'2px 2px 0 #6b4a2e':'2px 2px 0 #a07850'};
+          color:${darkMode?'#f0e0c8':'#2c1a0e'};
+          font-family:'Space Grotesk',sans-serif;text-transform:uppercase;
+          display:flex;align-items:center;justify-content:center;line-height:1;
+          transition:transform 0.1s,box-shadow 0.1s;">Reset</button>
+      </div>
+    </div>
+
+    <button id="pdfNext" style="
+      background:${darkMode?'#3d2a1a':'#d4b896'};
+      border:3px solid ${darkMode?'#6b4a2e':'#a07850'};border-radius:10px;
+      padding:10px 16px;font-family:'Space Grotesk',sans-serif;
+      font-weight:700;font-size:0.85rem;text-transform:uppercase;
+      cursor:pointer;box-shadow:${darkMode?'3px 3px 0 #6b4a2e':'3px 3px 0 #a07850'};
+      color:${darkMode?'#f0e0c8':'#2c1a0e'};
+      transition:transform 0.1s,box-shadow 0.1s;flex-shrink:0;">Next →</button>
+  `;
 
   document.getElementById('pdfReader').classList.add('open');
+
+  try {
+    await loadPdfJs();
+    const pdfDoc     = await pdfjsLib.getDocument(url).promise;
+    const totalPages = pdfDoc.numPages;
+    const seekBar    = document.getElementById('pdfSeekBar');
+    seekBar.max      = totalPages;
+
+    const saved      = getProgress(book.id);
+    let currentPage  = (saved && saved.page) ? Math.min(saved.page, totalPages) : 1;
+    let pdfFontSize  = (saved && saved.fontSize) ? saved.fontSize : 100;
+
+    // ── Text extraction + HTML rendering ──────────────────────
+    // Extract the PDF text layer and render it as flowing HTML — same
+    // typography, same CSS classes, same dark/light theming as the epub reader.
+    // This makes the PDF reading experience identical to the epub experience.
+
+    // Cache extracted pages so we don't re-extract on zoom/theme changes
+    const pageCache = {};
+
+    async function extractPageHtml(pageNum) {
+      if (pageCache[pageNum]) return pageCache[pageNum];
+
+      const page       = await pdfDoc.getPage(pageNum);
+      const textContent = await page.getTextContent();
+      const viewport   = page.getViewport({ scale: 1 });
+
+      // Group text items into lines by their Y position (±3pt tolerance)
+      const lines = [];
+      let   lastY = null;
+      let   currentLine = [];
+
+      // Sort items top-to-bottom, left-to-right
+      const items = [...textContent.items].sort((a, b) => {
+        const yDiff = b.transform[5] - a.transform[5];
+        if (Math.abs(yDiff) > 3) return yDiff;
+        return a.transform[4] - b.transform[4];
+      });
+
+      for (const item of items) {
+        const text = item.str;
+        if (!text.trim()) { currentLine.push(' '); continue; }
+        const y = Math.round(item.transform[5]);
+        if (lastY !== null && Math.abs(y - lastY) > 3) {
+          if (currentLine.length) lines.push(currentLine.join(''));
+          currentLine = [];
+        }
+        lastY = y;
+        currentLine.push(text);
+      }
+      if (currentLine.length) lines.push(currentLine.join(''));
+
+      // Heuristically group lines into paragraphs.
+      // A short line followed by content suggests a heading or paragraph break.
+      // Adjacent lines with similar length merge into a paragraph.
+      const pageW   = viewport.width;
+      const htmlLines = [];
+
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i].trim();
+        if (!line) continue;
+
+        const charWidth   = line.length;
+        const isShortLine = charWidth < 60;
+        const nextLine    = lines[i + 1] ? lines[i + 1].trim() : '';
+        const prevLine    = lines[i - 1] ? lines[i - 1].trim() : '';
+
+        // Detect heading: short, possibly ALL CAPS or title-case, standalone
+        const isAllCaps   = line === line.toUpperCase() && /[A-Z]/.test(line);
+        const isTitleCase = line.split(' ').filter(w => w).every(
+          w => !w[0] || w[0] === w[0].toUpperCase()
+        );
+        const isHeading   = isShortLine && charWidth < 80 && charWidth > 1 &&
+                            (isAllCaps || isTitleCase) &&
+                            (!nextLine || nextLine.length < 80);
+
+        if (isHeading && charWidth < 50) {
+          htmlLines.push(`<h2>${escHtml(line)}</h2>`);
+        } else if (isShortLine && !nextLine) {
+          htmlLines.push(`<p>${escHtml(line)}</p>`);
+        } else {
+          // Check if previous output ended a paragraph — if so start fresh
+          const lastTag = htmlLines.length
+            ? htmlLines[htmlLines.length - 1]
+            : '';
+          if (!lastTag.startsWith('<p') || lastTag.endsWith('</p>')) {
+            htmlLines.push(`<p>${escHtml(line)}`);
+          } else {
+            // Continue same paragraph — append with space
+            htmlLines[htmlLines.length - 1] += ' ' + escHtml(line);
+          }
+          // Close paragraph if next line is blank, short standalone, or heading
+          const nextIsBreak = !nextLine ||
+            nextLine.length < 40 ||
+            (nextLine === nextLine.toUpperCase() && /[A-Z]/.test(nextLine));
+          if (nextIsBreak) {
+            if (!htmlLines[htmlLines.length - 1].endsWith('</p>')) {
+              htmlLines[htmlLines.length - 1] += '</p>';
+            }
+          }
+        }
+      }
+
+      // Close any unclosed paragraph
+      if (htmlLines.length && !htmlLines[htmlLines.length - 1].endsWith('>')) {
+        htmlLines[htmlLines.length - 1] += '</p>';
+      }
+
+      const html = htmlLines.join('\n') ||
+        `<p style="color:${darkMode?'#b08060':'#7a5c3e'};font-style:italic;text-align:center;">
+          (This page has no extractable text — it may be an image or scanned page.)
+        </p>`;
+
+      pageCache[pageNum] = html;
+      return html;
+    }
+
+    function escHtml(s) {
+      return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    }
+
+    // ── Viewer div (same id as epub — uses same CSS rules) ───
+    function buildViewer() {
+      epubContainer.innerHTML = '';
+      const header   = document.querySelector('#pdfReader .reader-header');
+      const ctrl     = document.getElementById('epubControls');
+      const headerH  = header ? header.offsetHeight : 58;
+      const ctrlH    = ctrl   ? ctrl.offsetHeight   : 60;
+      const fullW    = window.innerWidth;
+      const fullH    = window.innerHeight - headerH - ctrlH;
+      const viewW    = Math.min(fullW, 680);
+      const viewH    = Math.max(fullH, 300);
+      const leftOff  = Math.floor((fullW - viewW) / 2);
+
+      const viewer        = document.createElement('div');
+      viewer.id           = 'epubViewer';
+      viewer.style.cssText =
+        `width:${viewW}px;height:${viewH}px;` +
+        `position:absolute;top:0;left:${leftOff}px;overflow-y:auto;overflow-x:hidden;` +
+        `padding:32px 40px;box-sizing:border-box;`;
+      epubContainer.appendChild(viewer);
+      return viewer;
+    }
+
+    // ── Apply typography — mirrors applyEpubTheme exactly ────
+    function applyPdfTypography(viewer) {
+      if (!viewer) return;
+      const dm = darkMode;
+      viewer.style.background = dm ? '#1c1008' : '#fdf6ec';
+      viewer.style.color      = dm ? '#e8d5b8' : '#2c1a0e';
+      viewer.style.fontFamily = "'Palatino Linotype', Palatino, Georgia, serif";
+      viewer.style.fontSize   = `${pdfFontSize}%`;
+      viewer.style.lineHeight = '1.85';
+
+      // Inject a style tag for headings and paragraphs
+      let styleEl = viewer.querySelector('#pdf-typo');
+      if (!styleEl) {
+        styleEl    = document.createElement('style');
+        styleEl.id = 'pdf-typo';
+        viewer.prepend(styleEl);
+      }
+      styleEl.textContent = `
+        #epubViewer p {
+          margin-bottom: 1.2em;
+          text-indent: 1.5em;
+          text-align: justify;
+          color: ${dm ? '#e8d5b8' : '#2c1a0e'};
+          font-size: 1em;
+          line-height: 1.85;
+        }
+        #epubViewer h1, #epubViewer h2, #epubViewer h3 {
+          font-family: 'Playfair Display', Georgia, serif;
+          color: ${dm ? '#d4a87a' : '#4a2c0e'};
+          text-indent: 0;
+          margin: 1.2em 0 0.6em;
+          line-height: 1.3;
+        }
+        #epubViewer h2 { font-size: 1.3em; }
+        #epubViewer h3 { font-size: 1.1em; }
+        #epubViewer a  { color: ${dm ? '#C4A1FF' : '#9723C9'}; }
+      `;
+    }
+
+    // ── Render a page ─────────────────────────────────────────
+    let viewer = buildViewer();
+
+    async function renderPage(pageNum) {
+      currentPage = Math.max(1, Math.min(pageNum, totalPages));
+
+      // Show spinner in the viewer
+      if (viewer) {
+        viewer.innerHTML = `
+          <div style="display:flex;align-items:center;justify-content:center;
+            flex-direction:column;gap:12px;min-height:200px;
+            color:${darkMode?'#b08060':'#7a5c3e'};
+            font-family:'Space Grotesk',sans-serif;font-size:0.85rem;
+            font-weight:600;text-transform:uppercase;letter-spacing:1px;">
+            <i class="fas fa-spinner fa-spin" style="font-size:1.5rem;color:#9723C9;"></i>
+            Page ${currentPage} of ${totalPages}
+          </div>`;
+      }
+
+      const html = await extractPageHtml(currentPage);
+      applyPdfTypography(viewer);
+      viewer.innerHTML = html;
+      applyPdfTypography(viewer);  // re-apply after innerHTML clears style tag
+      viewer.scrollTop = 0;
+
+      // Update controls
+      const pct = Math.round((currentPage / totalPages) * 100);
+      document.getElementById('pdfPageLabel').textContent = `Page ${currentPage} of ${totalPages}`;
+      document.getElementById('pdfPercent').textContent   = `${pct}%`;
+      document.getElementById('pdfZoomLabel').textContent = `${pdfFontSize}%`;
+      seekBar.value = currentPage;
+      seekBar.style.setProperty('--pdf-pct',
+        `${((currentPage - 1) / Math.max(totalPages - 1, 1)) * 100}%`);
+
+      saveProgress(book.id, null, pct, pdfFontSize, currentPage);
+      renderLibrary();
+      renderReading();
+    }
+
+    // ── Zoom — same as epub: adjusts font size on the live text ─
+    function applyZoom(size) {
+      pdfFontSize = Math.min(200, Math.max(70, Math.round(size)));
+      document.getElementById('pdfZoomLabel').textContent = `${pdfFontSize}%`;
+      if (viewer) viewer.style.fontSize = `${pdfFontSize}%`;
+      // Re-apply to update style tag colours too
+      applyPdfTypography(viewer);
+      // Save zoom
+      const prog = JSON.parse(localStorage.getItem('luminae-progress') || '{}');
+      if (prog[book.id]) {
+        prog[book.id].fontSize = pdfFontSize;
+        localStorage.setItem('luminae-progress', JSON.stringify(prog));
+      }
+    }
+
+    // ── Wire controls ─────────────────────────────────────────
+    document.getElementById('pdfPrev').onclick      = () => renderPage(currentPage - 1);
+    document.getElementById('pdfNext').onclick      = () => renderPage(currentPage + 1);
+    document.getElementById('pdfZoomOut').onclick   = () => applyZoom(pdfFontSize - 10);
+    document.getElementById('pdfZoomIn').onclick    = () => applyZoom(pdfFontSize + 10);
+    document.getElementById('pdfZoomReset').onclick = () => applyZoom(100);
+
+    seekBar.addEventListener('input', () => {
+      const pg  = parseInt(seekBar.value);
+      const pct = ((pg - 1) / Math.max(totalPages - 1, 1)) * 100;
+      seekBar.style.setProperty('--pdf-pct', `${pct}%`);
+      document.getElementById('pdfPageLabel').textContent = `Page ${pg} of ${totalPages}`;
+    });
+    seekBar.addEventListener('change', () => renderPage(parseInt(seekBar.value)));
+
+    // Keyboard nav
+    const onKey = (e) => {
+      if (!document.getElementById('pdfReader').classList.contains('open')) return;
+      if (e.key === 'ArrowRight' || e.key === 'ArrowDown') renderPage(currentPage + 1);
+      if (e.key === 'ArrowLeft'  || e.key === 'ArrowUp')   renderPage(currentPage - 1);
+    };
+    document.addEventListener('keyup', onKey);
+
+    // Pinch-to-zoom
+    let pinchDist0 = 0, pinchSize0 = 100, isPinching = false;
+    epubContainer.addEventListener('touchstart', (e) => {
+      if (e.touches.length !== 2) return;
+      isPinching = true;
+      const dx = e.touches[0].clientX - e.touches[1].clientX;
+      const dy = e.touches[0].clientY - e.touches[1].clientY;
+      pinchDist0 = Math.sqrt(dx*dx + dy*dy);
+      pinchSize0 = pdfFontSize;
+    }, { passive: true });
+    epubContainer.addEventListener('touchmove', (e) => {
+      if (!isPinching || e.touches.length !== 2) return;
+      const dx   = e.touches[0].clientX - e.touches[1].clientX;
+      const dy   = e.touches[0].clientY - e.touches[1].clientY;
+      const dist = Math.sqrt(dx*dx + dy*dy);
+      applyZoom(Math.round(pinchSize0 * (dist / pinchDist0)));
+    }, { passive: true });
+    epubContainer.addEventListener('touchend', (e) => {
+      if (e.touches.length < 2) isPinching = false;
+    }, { passive: true });
+
+    // Swipe navigation
+    let swipeX = 0, swipeY = 0;
+    epubContainer.addEventListener('touchstart', (e) => {
+      if (e.touches.length === 1) {
+        swipeX = e.changedTouches[0].screenX;
+        swipeY = e.changedTouches[0].screenY;
+      }
+    }, { passive: true });
+    epubContainer.addEventListener('touchend', (e) => {
+      if (isPinching) return;
+      const dx = swipeX - e.changedTouches[0].screenX;
+      const dy = swipeY - e.changedTouches[0].screenY;
+      if (Math.abs(dx) < 60 || Math.abs(dx) < Math.abs(dy)) return;
+      dx > 0 ? renderPage(currentPage + 1) : renderPage(currentPage - 1);
+    }, { passive: true });
+
+    // Resize — rebuild viewer at new dimensions
+    const onResize = () => {
+      clearTimeout(onResize._t);
+      onResize._t = setTimeout(() => {
+        viewer = buildViewer();
+        renderPage(currentPage);
+      }, 200);
+    };
+    window.addEventListener('resize', onResize);
+
+    // Store cleanup
+    book._pdfCleanup = () => {
+      document.removeEventListener('keyup', onKey);
+      window.removeEventListener('resize', onResize);
+    };
+
+    // Pre-fetch next 2 pages in background for snappy navigation
+    const prefetch = async () => {
+      for (let p = currentPage + 1; p <= Math.min(currentPage + 2, totalPages); p++) {
+        extractPageHtml(p).catch(() => {});
+      }
+    };
+
+    await renderPage(currentPage);
+    prefetch();
+
+  } catch(err) {
+    console.error('PDF load error:', err);
+    const container = document.getElementById('epubContainer');
+    if (container) container.innerHTML = `
+      <div style="display:flex;align-items:center;justify-content:center;
+        flex-direction:column;gap:12px;padding:40px;height:100%;
+        color:${darkMode?'#e8a090':'#c0392b'};
+        font-family:'Space Grotesk',sans-serif;font-size:0.9rem;">
+        <i class="fas fa-exclamation-triangle" style="font-size:2rem;"></i>
+        Could not open this PDF.
+        <span style="font-size:0.75rem;color:${darkMode?'#b08060':'#7a5c3e'};text-align:center;">
+          ${err.message || 'File may be corrupted or unsupported.'}
+        </span>
+      </div>`;
+  }
 }
+
 
 function closeReader() {
   document.getElementById('pdfReader').classList.remove('open');
@@ -676,6 +1143,17 @@ function closeReader() {
 
   const epubContainer = document.getElementById('epubContainer');
   if (epubContainer) epubContainer.innerHTML = '';
+
+  const pdfCanvas = document.getElementById('pdfCanvasContainer');
+  if (pdfCanvas) { pdfCanvas.innerHTML = ''; pdfCanvas.style.display = 'none'; }
+  const pdfCtrls = document.getElementById('pdfPageControls');
+  if (pdfCtrls) pdfCtrls.style.display = 'none';
+  // Run PDF cleanup callbacks (keyboard/resize listeners)
+  const activeBook = books.find(b => b.id === currentBookId);
+  if (activeBook && activeBook._pdfCleanup) {
+    activeBook._pdfCleanup();
+    delete activeBook._pdfCleanup;
+  }
 }
 
 // ========================
@@ -980,17 +1458,14 @@ function openEpubReader(book) {
       // ── Seek bar (draggable progress) ──────────────────────
       const seekBar = document.getElementById('epubSeekBar');
       let isSeeking = false;
-
       seekBar.addEventListener('mousedown',  () => { isSeeking = true; });
       seekBar.addEventListener('touchstart', () => { isSeeking = true; }, { passive: true });
-
       seekBar.addEventListener('input', () => {
         const pct = parseFloat(seekBar.value);
         seekBar.style.setProperty('--seek-pct', `${pct}%`);
         const label = document.getElementById('epubPercent');
         if (label) label.textContent = `${Math.round(pct)}%`;
       });
-
       const doSeek = () => {
         if (!isSeeking) return;
         isSeeking = false;
@@ -999,7 +1474,6 @@ function openEpubReader(book) {
         const cfi = epubBook.locations.cfiFromPercentage(pct);
         if (cfi) epubRendition.display(cfi);
       };
-
       seekBar.addEventListener('mouseup',  doSeek);
       seekBar.addEventListener('touchend', doSeek, { passive: true });
       seekBar.addEventListener('change',   doSeek);
@@ -1141,6 +1615,95 @@ function updateProgressBar(percent) {
     seek.style.setProperty('--seek-pct', `${rounded}%`);
   }
   if (label) label.textContent = `${Math.round(rounded)}%`;
+}
+
+// ========================
+// PDF THEME
+// ========================
+function applyPdfTheme() {
+  // PDF now renders as flowing text in epubViewer — just call applyEpubTheme
+  // which handles epubContainer, epubControls, header, and viewer typography.
+  // Additionally update the PDF-specific controls (pdfPageLabel etc.)
+  applyEpubTheme();
+
+  // Update pdf-specific label colours that applyEpubTheme doesn't know about
+  const dm = darkMode;
+  const pageLabel = document.getElementById('pdfPageLabel');
+  const pctLabel  = document.getElementById('pdfPercent');
+  const zoomLabel = document.getElementById('pdfZoomLabel');
+  if (pageLabel) pageLabel.style.color = dm ? '#b08060' : '#7a5c3e';
+  if (pctLabel)  pctLabel.style.color  = dm ? '#d4a87a' : '#9723C9';
+  if (zoomLabel) zoomLabel.style.color = dm ? '#b08060' : '#7a5c3e';
+
+  // Re-apply typography to the viewer so text colour updates instantly
+  const viewer = document.getElementById('epubViewer');
+  if (viewer && viewer.querySelector('#pdf-typo')) {
+    // This is a PDF text viewer — update its inline style + injected CSS
+    viewer.style.background = dm ? '#1c1008' : '#fdf6ec';
+    viewer.style.color      = dm ? '#e8d5b8' : '#2c1a0e';
+    const styleEl = viewer.querySelector('#pdf-typo');
+    if (styleEl) styleEl.textContent = `
+      #epubViewer p {
+        margin-bottom: 1.2em; text-indent: 1.5em; text-align: justify;
+        color: ${dm ? '#e8d5b8' : '#2c1a0e'}; font-size: 1em; line-height: 1.85;
+      }
+      #epubViewer h1, #epubViewer h2, #epubViewer h3 {
+        font-family: 'Playfair Display', Georgia, serif;
+        color: ${dm ? '#d4a87a' : '#4a2c0e'}; text-indent: 0;
+        margin: 1.2em 0 0.6em; line-height: 1.3;
+      }
+      #epubViewer h2 { font-size: 1.3em; }
+      #epubViewer h3 { font-size: 1.1em; }
+      #epubViewer a  { color: ${dm ? '#C4A1FF' : '#9723C9'}; }
+    `;
+  }
+  return; // skip old canvas-based code below
+  // (dead code kept for reference — will never be reached)
+
+  function C(dark, light) { return darkMode ? dark : light; }
+
+  const container = document.getElementById('pdfCanvasContainer');
+  const controls  = document.getElementById('pdfPageControls');
+  const header    = document.querySelector('#pdfReader .reader-header');
+
+  if (container) {
+    container.style.background = C('#1c1008','#f4ede4');
+  }
+  if (controls) {
+    controls.style.background  = C('#140e08','#ede4d8');
+    controls.style.borderColor = C('#4a3728','#c4a882');
+    controls.querySelectorAll('button').forEach(btn => {
+      const isReset = btn.id === 'pdfZoomReset';
+      btn.style.background  = isReset ? C('#2a1a0a','#c4a882') : C('#3d2a1a','#d4b896');
+      btn.style.borderColor = C('#6b4a2e','#a07850');
+      btn.style.color       = C('#f0e0c8','#2c1a0e');
+      btn.style.boxShadow   = C('2px 2px 0 #6b4a2e','2px 2px 0 #a07850');
+    });
+    const pageLabel = document.getElementById('pdfPageLabel');
+    const zoomLabel = document.getElementById('pdfZoomLabel');
+    const pctLabel  = document.getElementById('pdfPercent');
+    if (pageLabel) pageLabel.style.color = C('#b08060','#7a5c3e');
+    if (zoomLabel) zoomLabel.style.color = C('#b08060','#7a5c3e');
+    if (pctLabel)  pctLabel.style.color  = C('#d4a87a','#9723C9');
+  }
+  if (header) {
+    header.style.background  = C('#1c1008','');
+    header.style.borderColor = C('#4a3728','');
+    header.querySelectorAll('button').forEach(b => {
+      b.style.background  = C('#3d2a1a','');
+      b.style.borderColor = C('#6b4a2e','');
+      b.style.color       = C('#f0e0c8','');
+    });
+    const titleSpan = header.querySelector('span');
+    if (titleSpan) titleSpan.style.color = C('#e8d5b8','');
+  }
+  // Re-tint canvas on theme toggle without re-rendering
+  const canvas = document.querySelector('#pdfCanvasContainer canvas');
+  if (canvas) {
+    canvas.style.filter    = C('invert(1) hue-rotate(180deg) sepia(0.3) brightness(0.85) contrast(0.9)','none');
+    canvas.style.background = C('#e8d5b8','#ffffff');
+    canvas.style.boxShadow  = C('0 8px 40px rgba(0,0,0,0.6)','0 4px 20px rgba(0,0,0,0.12)');
+  }
 }
 
 // ========================
